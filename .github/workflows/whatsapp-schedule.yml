@@ -8,11 +8,11 @@ on:
     # # 08:00 WIB
     # - cron: "0 1 * * *"
 
-     # START setiap 10 menit
-    - cron: "*/10 * * * *"
+    # START pada menit genap
+    - cron: "*/2 * * * *"
 
-    # STOP setiap 10 menit, dimulai menit ke-5
-    - cron: "5-59/10 * * * *"
+    # STOP pada menit ganjil
+    - cron: "1-59/2 * * * *"
 
   workflow_dispatch:
     inputs:
@@ -40,7 +40,7 @@ jobs:
           PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
           ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
           SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
-          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '*/10 * * * *' && 'start' || 'stop') }}
+          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '*/2 * * * *' && 'start' || 'stop') }}
 
         run: |
           node <<'NODE'
