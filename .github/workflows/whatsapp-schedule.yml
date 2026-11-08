@@ -1,85 +1,29 @@
-name: WhatsApp Railway Scheduler
+
+name: Railway Deployment Debug
 
 on:
-  schedule:
-    # 06:00 WIB
-    - cron: "0 23 * * *"
-
-    # 08:00 WIB
-    - cron: "0 1 * * *"
-
   workflow_dispatch:
-    inputs:
-      action:
-        description: "Pilih aksi WhatsApp"
-        required: true
-        type: choice
-        options:
-          - start
-          - stop
-
-concurrency:
-  group: whatsapp-scheduler
-  cancel-in-progress: false
 
 jobs:
-  manage-whatsapp:
+  debug:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Manage WhatsApp Railway Service
-        shell: bash
+      - name: Check Railway Deployments
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-          RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
-          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
-
-          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '0 23 * * *' && 'start' || 'stop') }}
+          PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+          SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
 
         run: |
           node <<'NODE'
-          const endpoint = "https://backboard.railway.com/graphql/v2";
-
-          async function railway(query, variables = {}) {
-          const headers = {
-              "Content-Type": "application/json"
-            };
-          
-            headers["Project-Access-Token"] =
-              process.env.RAILWAY_TOKEN;
-          
-            const response = await fetch(
-              "https://backboard.railway.com/graphql/v2",
-              {
-                method: "POST",
-                headers,
-                body: JSON.stringify({ query, variables })
-              }
-            );
-          
-            const result = await response.json();
-          
-            console.log("HTTP Status:", response.status);
-          
-            if (!response.ok || result.errors?.length) {
-              console.error(
-                "Railway API Error:",
-                JSON.stringify(result.errors || result, null, 2)
-              );
-          
-              throw new Error("Railway API request failed");
-            }
-          
-            return result.data;
-          }
-
-          async function getActiveDeployment() {
+          async function main() {
             const query = `
-              query LatestActiveDeployment(
+              query Deployments(
                 $input: DeploymentListInput!
               ) {
-                deployments(input: $input, first: 1) {
+                deployments(input: $input, first: 5) {
                   edges {
                     node {
                       id
@@ -91,104 +35,40 @@ jobs:
               }
             `;
 
-            const data = await railway(query, {
+            const variables = {
               input: {
-                projectId: process.env.RAILWAY_PROJECT_ID,
-                serviceId: process.env.RAILWAY_SERVICE_ID,
-                environmentId: process.env.RAILWAY_ENVIRONMENT_ID,
-                status: {
-                  successfulOnly: true
-                }
+                projectId: process.env.PROJECT_ID,
+                environmentId: process.env.ENVIRONMENT_ID,
+                serviceId: process.env.SERVICE_ID
               }
-            });
+            };
 
-            return data.deployments.edges[0]?.node || null;
-          }
-
-          async function startWhatsApp() {
-            const active = await getActiveDeployment();
-
-            if (active) {
-              console.log("WhatsApp sudah berjalan:", active.id);
-              return;
-            }
-
-            console.log("Memulai WhatsApp service...");
-
-            const mutation = `
-              mutation StartWhatsApp(
-                $input: EnvironmentTriggersDeployInput!
-              ) {
-                environmentTriggersDeploy(input: $input)
+            const response = await fetch(
+              "https://backboard.railway.com/graphql/v2",
+              {
+                method: "POST",
+                headers: {
+                  "Project-Access-Token": process.env.RAILWAY_TOKEN,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ query, variables })
               }
-            `;
+            );
 
-            const result = await railway(mutation, {
-              input: {
-                projectId: process.env.RAILWAY_PROJECT_ID,
-                environmentId: process.env.RAILWAY_ENVIRONMENT_ID,
-                serviceId: process.env.RAILWAY_SERVICE_ID
-              }
-            });
+            const result = await response.json();
 
-            if (result.environmentTriggersDeploy !== true) {
-              throw new Error("Gagal memicu deployment WhatsApp");
+            console.log("HTTP:", response.status);
+            console.log(JSON.stringify(result, null, 2));
+
+            if (!response.ok || result.errors?.length) {
+              throw new Error("Deployment query failed");
             }
 
-            console.log("START berhasil dipicu");
-          }
-
-          async function stopWhatsApp() {
-            const active = await getActiveDeployment();
-
-            if (!active) {
-              console.log("WhatsApp sudah berhenti");
-              return;
-            }
-
-            console.log("Deployment ID:", active.id);
-            console.log("Current status:", active.status);
-
-            const mutation = `
-              mutation StopWhatsApp($id: String!) {
-                deploymentStop(id: $id)
-              }
-            `;
-
-            const result = await railway(mutation, {
-              id: active.id
-            });
-
-            if (result.deploymentStop !== true) {
-              throw new Error("Railway gagal menghentikan deployment");
-            }
-
-            console.log("STOP berhasil dipicu");
-          }
-
-          async function main() {
-            const action = process.env.ACTION;
-
-            console.log("Action:", action);
-
-            if (!process.env.RAILWAY_TOKEN ||
-                !process.env.RAILWAY_PROJECT_ID ||
-                !process.env.RAILWAY_ENVIRONMENT_ID ||
-                !process.env.RAILWAY_SERVICE_ID) {
-              throw new Error("Railway credentials belum lengkap");
-            }
-
-            if (action === "start") {
-              await startWhatsApp();
-            } else if (action === "stop") {
-              await stopWhatsApp();
-            } else {
-              throw new Error("Action tidak valid");
-            }
+            console.log("Deployment query berhasil!");
           }
 
           main().catch(error => {
-            console.error("Railway Scheduler Error:", error);
+            console.error(error);
             process.exit(1);
           });
           NODE
