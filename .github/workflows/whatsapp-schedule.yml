@@ -2,11 +2,9 @@ name: WhatsApp Railway Scheduler
 
 on:
   schedule:
-    # START 02:10 WIB
-    - cron: "10 19 * * *"
+    - cron: '35 19 * * *'
 
-    # STOP 02:15 WIB
-    - cron: "15 19 * * *"
+    - cron: '40 19 * * *'
 
   workflow_dispatch:
     inputs:
@@ -34,7 +32,7 @@ jobs:
           PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
           ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
           SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
-          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '10 19 * * *' && 'start' || 'stop') }}
+          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '35 19 * * *' && 'start' || 'stop') }}
         run: |
           node <<'NODE'
           const endpoint = "https://backboard.railway.com/graphql/v2";
