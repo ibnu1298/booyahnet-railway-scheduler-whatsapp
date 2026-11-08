@@ -11,9 +11,6 @@ on:
     # START pada menit genap
     - cron: "*/2 * * * *"
 
-    # STOP pada menit ganjil
-    - cron: "1-59/2 * * * *"
-
   workflow_dispatch:
     inputs:
       action:
@@ -40,8 +37,7 @@ jobs:
           PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
           ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
           SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
-          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '*/2 * * * *' && 'start' || 'stop') }}
-
+          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || 'start' }}
         run: |
           node <<'NODE'
           const endpoint = "https://backboard.railway.com/graphql/v2";
