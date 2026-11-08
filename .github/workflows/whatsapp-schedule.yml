@@ -1,0 +1,162 @@
+
+name: WhatsApp Railway Scheduler
+
+on:
+  schedule:
+    # 06:00 WIB
+    - cron: "0 23 * * *"
+
+    # 08:00 WIB
+    - cron: "0 1 * * *"
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Pilih aksi WhatsApp"
+        required: true
+        type: choice
+        options:
+          - start
+          - stop
+
+concurrency:
+  group: whatsapp-scheduler
+  cancel-in-progress: false
+
+jobs:
+  manage-whatsapp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Manage WhatsApp Railway Service
+        shell: bash
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+
+          ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event.schedule == '0 23 * * *' && 'start' || 'stop') }}
+
+        run: |
+          node <<'NODE'
+          const endpoint = "https://backboard.railway.com/graphql/v2";
+
+          async function railway(query, variables = {}) {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Project-Access-Token": process.env.RAILWAY_TOKEN,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ query, variables })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || result.errors?.length) {
+              throw new Error(JSON.stringify(result.errors || result));
+            }
+
+            return result.data;
+          }
+
+          async function main() {
+            const action = process.env.ACTION;
+
+            console.log(`WhatsApp action: ${action}`);
+
+            if (!["start", "stop"].includes(action)) {
+              throw new Error("Invalid action");
+            }
+
+            const query = `
+              query Deployments($input: DeploymentListInput!, $first: Int) {
+                deployments(input: $input, first: $first) {
+                  edges {
+                    node {
+                      id
+                      status
+                      createdAt
+                      canRedeploy
+                    }
+                  }
+                }
+              }
+            `;
+
+            const data = await railway(query, {
+              input: {
+                projectId: process.env.RAILWAY_PROJECT_ID,
+                serviceId: process.env.RAILWAY_SERVICE_ID,
+                environmentId: process.env.RAILWAY_ENVIRONMENT_ID
+              },
+              first: 10
+            });
+
+            const deployments = data.deployments.edges.map(
+              edge => edge.node
+            );
+
+            const deployment = deployments.find(item =>
+              ["SUCCESS", "STOPPED"].includes(item.status)
+            );
+
+            if (!deployment) {
+              throw new Error("No usable WhatsApp deployment found");
+            }
+
+            console.log("Deployment ID:", deployment.id);
+            console.log("Current status:", deployment.status);
+
+            if (action === "start") {
+              if (deployment.status === "SUCCESS") {
+                console.log("WhatsApp is already running");
+                return;
+              }
+
+              if (!deployment.canRedeploy) {
+                throw new Error("Deployment cannot be redeployed");
+              }
+
+              const mutation = `
+                mutation Redeploy($id: String!) {
+                  deploymentRedeploy(id: $id) {
+                    id
+                    status
+                  }
+                }
+              `;
+
+              const result = await railway(mutation, {
+                id: deployment.id
+              });
+
+              console.log("START requested:", result.deploymentRedeploy);
+            }
+
+            if (action === "stop") {
+              if (deployment.status === "STOPPED") {
+                console.log("WhatsApp is already stopped");
+                return;
+              }
+
+              const mutation = `
+                mutation Stop($id: String!) {
+                  deploymentStop(id: $id)
+                }
+              `;
+
+              const result = await railway(mutation, {
+                id: deployment.id
+              });
+
+              console.log("STOP requested:", result.deploymentStop);
+            }
+          }
+
+          main().catch(error => {
+            console.error("Railway Scheduler Error:", error);
+            process.exit(1);
+          });
+          NODE
