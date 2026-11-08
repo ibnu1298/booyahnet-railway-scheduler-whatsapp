@@ -44,18 +44,18 @@ jobs:
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
-                "Project-Access-Token": process.env.RAILWAY_TOKEN,
+                Authorization: `Bearer ${process.env.RAILWAY_TOKEN}`,
                 "Content-Type": "application/json"
               },
               body: JSON.stringify({ query, variables })
             });
-
+          
             const result = await response.json();
-
+          
             if (!response.ok || result.errors?.length) {
               throw new Error(JSON.stringify(result.errors || result));
             }
-
+          
             return result.data;
           }
 
