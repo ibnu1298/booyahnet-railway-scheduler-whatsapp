@@ -2,9 +2,11 @@ name: WhatsApp Railway Scheduler
 
 on:
   schedule:
-    - cron: '45 2 * * *'
+   - cron: '5 3  * * *'
+     timezone: 'Asia/Jakarta'
 
-    - cron: '50 2 * * *'
+   - cron: '10 3 * * *'
+     timezone: 'Asia/Jakarta'
 
   workflow_dispatch:
     inputs:
