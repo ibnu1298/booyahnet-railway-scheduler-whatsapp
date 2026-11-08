@@ -3,10 +3,16 @@ name: WhatsApp Railway Scheduler
 
 on:
   schedule:
-    # 06:00 WIB
-    - cron: "0 23 * * *"
-    # 08:00 WIB
-    - cron: "0 1 * * *"
+    # # 06:00 WIB
+    # - cron: "0 23 * * *"
+    # # 08:00 WIB
+    # - cron: "0 1 * * *"
+
+     # START setiap 10 menit
+    - cron: "*/10 * * * *"
+
+    # STOP setiap 10 menit, dimulai menit ke-5
+    - cron: "5-59/10 * * * *"
 
   workflow_dispatch:
     inputs:
