@@ -1,4 +1,3 @@
-
 name: WhatsApp Railway Scheduler
 
 on:
@@ -55,30 +54,25 @@ jobs:
             const result = await response.json();
 
             if (!response.ok || result.errors?.length) {
-              throw new Error(JSON.stringify(result.errors || result));
+              throw new Error(
+                JSON.stringify(result.errors || result)
+              );
             }
 
             return result.data;
           }
 
-          async function main() {
-            const action = process.env.ACTION;
-
-            console.log(`WhatsApp action: ${action}`);
-
-            if (!["start", "stop"].includes(action)) {
-              throw new Error("Invalid action");
-            }
-
+          async function getActiveDeployment() {
             const query = `
-              query Deployments($input: DeploymentListInput!, $first: Int) {
-                deployments(input: $input, first: $first) {
+              query LatestActiveDeployment(
+                $input: DeploymentListInput!
+              ) {
+                deployments(input: $input, first: 1) {
                   edges {
                     node {
                       id
                       status
                       createdAt
-                      canRedeploy
                     }
                   }
                 }
@@ -89,69 +83,95 @@ jobs:
               input: {
                 projectId: process.env.RAILWAY_PROJECT_ID,
                 serviceId: process.env.RAILWAY_SERVICE_ID,
-                environmentId: process.env.RAILWAY_ENVIRONMENT_ID
-              },
-              first: 10
+                environmentId: process.env.RAILWAY_ENVIRONMENT_ID,
+                status: {
+                  successfulOnly: true
+                }
+              }
             });
 
-            const deployments = data.deployments.edges.map(
-              edge => edge.node
-            );
+            return data.deployments.edges[0]?.node || null;
+          }
 
-            const deployment = deployments.find(item =>
-              ["SUCCESS", "STOPPED"].includes(item.status)
-            );
+          async function startWhatsApp() {
+            const active = await getActiveDeployment();
 
-            if (!deployment) {
-              throw new Error("No usable WhatsApp deployment found");
+            if (active) {
+              console.log("WhatsApp sudah berjalan:", active.id);
+              return;
             }
 
-            console.log("Deployment ID:", deployment.id);
-            console.log("Current status:", deployment.status);
+            console.log("Memulai WhatsApp service...");
+
+            const mutation = `
+              mutation StartWhatsApp(
+                $input: EnvironmentTriggersDeployInput!
+              ) {
+                environmentTriggersDeploy(input: $input)
+              }
+            `;
+
+            const result = await railway(mutation, {
+              input: {
+                projectId: process.env.RAILWAY_PROJECT_ID,
+                environmentId: process.env.RAILWAY_ENVIRONMENT_ID,
+                serviceId: process.env.RAILWAY_SERVICE_ID
+              }
+            });
+
+            if (result.environmentTriggersDeploy !== true) {
+              throw new Error("Gagal memicu deployment WhatsApp");
+            }
+
+            console.log("START berhasil dipicu");
+          }
+
+          async function stopWhatsApp() {
+            const active = await getActiveDeployment();
+
+            if (!active) {
+              console.log("WhatsApp sudah berhenti");
+              return;
+            }
+
+            console.log("Deployment ID:", active.id);
+            console.log("Current status:", active.status);
+
+            const mutation = `
+              mutation StopWhatsApp($id: String!) {
+                deploymentStop(id: $id)
+              }
+            `;
+
+            const result = await railway(mutation, {
+              id: active.id
+            });
+
+            if (result.deploymentStop !== true) {
+              throw new Error("Railway gagal menghentikan deployment");
+            }
+
+            console.log("STOP berhasil dipicu");
+          }
+
+          async function main() {
+            const action = process.env.ACTION;
+
+            console.log("Action:", action);
+
+            if (!process.env.RAILWAY_TOKEN ||
+                !process.env.RAILWAY_PROJECT_ID ||
+                !process.env.RAILWAY_ENVIRONMENT_ID ||
+                !process.env.RAILWAY_SERVICE_ID) {
+              throw new Error("Railway credentials belum lengkap");
+            }
 
             if (action === "start") {
-              if (deployment.status === "SUCCESS") {
-                console.log("WhatsApp is already running");
-                return;
-              }
-
-              if (!deployment.canRedeploy) {
-                throw new Error("Deployment cannot be redeployed");
-              }
-
-              const mutation = `
-                mutation Redeploy($id: String!) {
-                  deploymentRedeploy(id: $id) {
-                    id
-                    status
-                  }
-                }
-              `;
-
-              const result = await railway(mutation, {
-                id: deployment.id
-              });
-
-              console.log("START requested:", result.deploymentRedeploy);
-            }
-
-            if (action === "stop") {
-              if (deployment.status === "STOPPED") {
-                console.log("WhatsApp is already stopped");
-                return;
-              }
-
-              const mutation = `
-                mutation Stop($id: String!) {
-                  deploymentStop(id: $id)
-                }
-              `;
-
-              const result = await railway(mutation, {
-                id: deployment.id
-              });
-
-              console.log("STOP requested:", result.deploymentStop);
+              await startWhatsApp();
+            } else if (action === "stop") {
+              await stopWhatsApp();
+            } else {
+              throw new Error("Action tidak valid");
             }
           }
 
